@@ -1,0 +1,235 @@
+-- === 0. ОЧИЩЕННЯ СТАРИХ СКРИПТІВ ===
+local scriptName = "Astral_Location_Guard"
+for _, oldObj in pairs(game:GetService("CoreGui"):GetChildren()) do
+    if oldObj.Name == scriptName or oldObj.Name == "Astral_Ultimate_Security" then oldObj:Destroy() end
+end
+for _, oldSg in pairs(game.Players.LocalPlayer.PlayerGui:GetChildren()) do
+    if oldSg.Name == scriptName or oldSg.Name == "Astral_Ultimate_Security" then oldSg:Destroy() end
+end
+
+-- === 1. НАЛАШТУВАННЯ ===
+local player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+-- Змінні локації (будуть оновлюватись при натисканні кнопки)
+local lockSurface = CFrame.new(-35.87, -12.55, -1.83) 
+local lockUnderground = lockSurface + Vector3.new(0, -55, 0)
+
+local detectionRadius = 15 
+local autoHideActive = false
+local securityActive = false
+local whitelist = {} 
+local isExiting = false
+
+-- === 2. GUI (ВЕЛИКИЙ ТЕКСТ ТА СТАБІЛЬНІСТЬ) ===
+local sg = Instance.new("ScreenGui", player.PlayerGui)
+sg.Name = scriptName
+sg.ResetOnSpawn = false
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 600, 0, 480)
+main.Position = UDim2.new(0.5, -300, 0.5, -240)
+main.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+main.BorderSizePixel = 0
+main.Active = true
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
+
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 55)
+title.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+title.Text = "  ASTRAL: LOCATION GUARD v5.0"
+title.TextColor3 = Color3.fromRGB(0, 255, 150)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 22
+title.TextXAlignment = Enum.TextXAlignment.Left
+Instance.new("UICorner", title)
+
+local statusBar = Instance.new("TextLabel", main)
+statusBar.Size = UDim2.new(1, -30, 0, 45)
+statusBar.Position = UDim2.new(0, 15, 1, -60)
+statusBar.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+statusBar.Text = "PRESS BUTTON TO LOCK LOCATION"
+statusBar.TextColor3 = Color3.fromRGB(150, 150, 150)
+statusBar.Font = Enum.Font.Code
+statusBar.TextSize = 16
+Instance.new("UICorner", statusBar)
+
+-- Права панель (Whitelist)
+local scrollFrame = Instance.new("Frame", main)
+scrollFrame.Size = UDim2.new(0.5, -20, 1, -130)
+scrollFrame.Position = UDim2.new(0.5, 10, 0, 75)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Instance.new("UICorner", scrollFrame)
+
+local scroll = Instance.new("ScrollingFrame", scrollFrame)
+scroll.Size = UDim2.new(1, -10, 1, -10)
+scroll.Position = UDim2.new(0, 5, 0, 5)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 5
+local sList = Instance.new("UIListLayout", scroll)
+sList.Padding = UDim.new(0, 6)
+
+local function updateList()
+    for _, v in pairs(scroll:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+    for _, plr in pairs(game.Players:GetPlayers()) do
+        if plr == player then continue end
+        local btn = Instance.new("TextButton", scroll)
+        btn.Size = UDim2.new(1, 0, 0, 40)
+        btn.BackgroundColor3 = whitelist[plr.UserId] and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(45, 45, 55)
+        btn.Text = plr.DisplayName
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 16
+        Instance.new("UICorner", btn)
+        btn.MouseButton1Click:Connect(function()
+            whitelist[plr.UserId] = not whitelist[plr.UserId]
+            btn.BackgroundColor3 = whitelist[plr.UserId] and Color3.fromRGB(0, 150, 255) or Color3.fromRGB(45, 45, 55)
+        end)
+    end
+    scroll.CanvasSize = UDim2.new(0, 0, 0, sList.AbsoluteContentSize.Y)
+end
+game.Players.PlayerAdded:Connect(updateList)
+game.Players.PlayerRemoving:Connect(updateList)
+updateList()
+
+-- Ліва панель (Керування)
+local controls = Instance.new("Frame", main)
+controls.Size = UDim2.new(0.5, -20, 1, -140)
+controls.Position = UDim2.new(0, 15, 0, 75)
+controls.BackgroundTransparency = 1
+Instance.new("UIListLayout", controls).Padding = UDim.new(0, 20)
+
+-- КНОПКА ЗАХОПЛЕННЯ ЛОКАЦІЇ ТА АКТИВАЦІЇ
+local function createMainToggle(text)
+    local b = Instance.new("TextButton", controls)
+    b.Size = UDim2.new(1, 0, 0, 80)
+    b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    b.Text = text .. "\n[OFF]"
+    b.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 18
+    Instance.new("UICorner", b)
+    
+    b.MouseButton1Click:Connect(function()
+        autoHideActive = not autoHideActive
+        if autoHideActive then
+            -- ЗАПАМ'ЯТОВУЄМО, ДЕ ТИ СТОЇШ ЗАРАЗ
+            local char = player.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                lockSurface = root.CFrame
+                lockUnderground = lockSurface + Vector3.new(0, -55, 0)
+                b.Text = "LOCATION LOCKED!\n[GUARD ACTIVE]"
+                b.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+                b.TextColor3 = Color3.new(1,1,1)
+            end
+        else
+            b.Text = text .. "\n[OFF]"
+            b.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            b.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+        end
+    end)
+end
+
+createMainToggle("LOCK & GUARD LOCATION")
+
+-- Додаткові кнопки
+local function createSmallToggle(text, callback)
+    local b = Instance.new("TextButton", controls)
+    b.Size = UDim2.new(1, 0, 0, 50)
+    b.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    b.Text = text .. ": OFF"
+    b.TextColor3 = Color3.new(0.7, 0.7, 0.7)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 16
+    Instance.new("UICorner", b)
+    local s = false
+    b.MouseButton1Click:Connect(function()
+        s = not s
+        b.Text = text .. (s and ": ON" or ": OFF")
+        b.BackgroundColor3 = s and Color3.fromRGB(0, 120, 200) or Color3.fromRGB(35, 35, 45)
+        b.TextColor3 = Color3.new(1,1,1)
+        callback(s)
+    end)
+end
+
+createSmallToggle("ANTI-SPECTATOR", function(s) securityActive = s end)
+
+-- === 3. ГОЛОВНА ЛОГІКА ОХОРОНИ (БЕЗ ВИДАЛЕНЬ) ===
+task.spawn(function()
+    while task.wait() do
+        if isExiting then break end
+        
+        local char = player.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then continue end
+
+        local dangerDetected = false
+        local minDistance = 999
+
+        for _, plr in pairs(game.Players:GetPlayers()) do
+            if plr == player or whitelist[plr.UserId] then continue end
+
+            if plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+                -- ВАЖЛИВО: Рахуємо дистанцію від ЗАБЛОКОВАНОЇ точки, а не від гравця
+                local dist = (lockSurface.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                if dist < minDistance then minDistance = dist end
+                
+                if dist <= detectionRadius then
+                    dangerDetected = true
+                end
+            end
+            
+            if securityActive then
+                local pScripts = plr:FindFirstChild("PlayerScripts")
+                if pScripts and pScripts:FindFirstChild("Ability Selection") then
+                    local abs = pScripts["Ability Selection"]
+                    if abs:IsA("StringValue") and abs.Value:lower() == "spectator" then
+                        isExiting = true
+                        player:Kick("\n[ASTRAL] Spectator: " .. plr.Name)
+                        return
+                    end
+                end
+            end
+        end
+
+        -- ЛОГІКА ХОВАНКИ
+        if autoHideActive then
+            if dangerDetected then
+                statusBar.Text = "🚨 SOMEONE NEAR THE MARK! HIDING..."
+                statusBar.TextColor3 = Color3.fromRGB(255, 50, 50)
+                root.Velocity = Vector3.new(0,0,0)
+                root.CFrame = lockUnderground
+            else
+                statusBar.Text = string.format("MARK SAFE (Nearest to mark: %.1fm)", minDistance)
+                statusBar.TextColor3 = Color3.fromRGB(0, 255, 150)
+                
+                -- Повернення, якщо був під картою
+                if root.Position.Y < lockSurface.Position.Y - 10 then
+                    root.CFrame = lockSurface
+                end
+            end
+        else
+            statusBar.Text = "READY TO LOCK NEW LOCATION"
+            statusBar.TextColor3 = Color3.fromRGB(150, 150, 150)
+        end
+    end
+end)
+
+-- === 4. ПЕРЕТЯГУВАННЯ ===
+local dragging, dragInput, dragStart, startPos
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = main.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
