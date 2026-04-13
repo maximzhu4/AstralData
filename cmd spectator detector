@@ -1,1 +1,158 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local CoreGui = game:GetService("CoreGui")
 
+local lp = Players.LocalPlayer
+local guiName = "CmdAbilityTracker"
+local targetParent = pcall(function() return CoreGui.Name end) and CoreGui or lp:WaitForChild("PlayerGui")
+
+if targetParent:FindFirstChild(guiName) then targetParent[guiName]:Destroy() end
+
+-- === СТИЛЬ CMD ===
+local colors = {
+    bg = Color3.fromRGB(12, 12, 12),
+    topbar = Color3.fromRGB(255, 255, 255),
+    text = Color3.fromRGB(20, 220, 20),
+    danger = Color3.fromRGB(255, 0, 0),
+    title = Color3.fromRGB(0, 0, 0)
+}
+local font = Enum.Font.Code
+
+-- === ГУЇ ===
+local sg = Instance.new("ScreenGui", targetParent)
+sg.Name = guiName
+sg.ResetOnSpawn = false
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 450, 0, 300)
+main.Position = UDim2.new(0.5, -225, 0.5, -150)
+main.BackgroundColor3 = colors.bg
+main.BorderSizePixel = 2
+main.BorderColor3 = Color3.fromRGB(100, 100, 100)
+main.Active = true
+
+local topBar = Instance.new("Frame", main)
+topBar.Size = UDim2.new(1, 0, 0, 25)
+topBar.BackgroundColor3 = colors.topbar
+
+local title = Instance.new("TextLabel", topBar)
+title.Size = UDim2.new(1, -30, 1, 0)
+title.Position = UDim2.new(0, 10, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "C:\\Windows\\System32\\cmd.exe"
+title.Font = font
+title.TextSize = 14
+title.TextColor3 = colors.title
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+local scroll = Instance.new("ScrollingFrame", main)
+scroll.Size = UDim2.new(1, -10, 1, -35)
+scroll.Position = UDim2.new(0, 5, 0, 30)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 4
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+Instance.new("UIListLayout", scroll).Padding = UDim.new(0, 2)
+
+-- === СИСТЕМА ВИХОДУ (EXIT LOGIC) ===
+local isExiting = false
+local function emergencyExit()
+    if isExiting then return end
+    isExiting = true
+    
+    -- Очищення екрану для повідомлення про небезпеку
+    for _, v in pairs(scroll:GetChildren()) do if v:IsA("TextLabel") then v:Destroy() end end
+    
+    local function logDanger(txt)
+        local l = Instance.new("TextLabel", scroll)
+        l.Size = UDim2.new(1, 0, 0, 25)
+        l.BackgroundTransparency = 1
+        l.Font = font
+        l.TextSize = 18
+        l.TextColor3 = colors.danger
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.Text = ">> " .. txt
+    end
+
+    logDanger("DANGER !!! SPECTATOR DETECTED")
+    task.wait(1)
+    logDanger("LEAVING IN 3...")
+    task.wait(1)
+    logDanger("LEAVING IN 2...")
+    task.wait(1)
+    logDanger("LEAVING IN 1...")
+    task.wait(0.5)
+    
+    -- Вихід з гри
+    lp:Kick("\n[ASTRAL SECURITY]\nReason: Spectator Detected\nAction: Emergency Disconnect")
+end
+
+-- === СКАНЕР ЗДІБНОСТЕЙ ===
+local function getPlayerAbility(plr)
+    -- Перевірка твого шляху
+    local pScripts = plr:FindFirstChild("PlayerScripts")
+    if pScripts then
+        local abs = pScripts:FindFirstChild("Ability Selection")
+        if abs and abs:IsA("StringValue") then return abs.Value end
+    end
+    
+    -- Перевірка лідерборду та персонажа
+    local ls = plr:FindFirstChild("leaderstats")
+    if ls then
+        for _, s in pairs(ls:GetChildren()) do
+            if s.Name:lower():find("ability") then return tostring(s.Value) end
+        end
+    end
+    
+    if plr.Character then
+        local val = plr.Character:FindFirstChild("Ability")
+        if val then return tostring(val.Value) end
+    end
+    
+    return "Unknown"
+end
+
+-- === ЦИКЛ МОНІТОРИНГУ ===
+local labels = {}
+task.spawn(function()
+    while task.wait(0.5) do
+        if isExiting then break end
+        
+        for _, plr in pairs(Players:GetPlayers()) do
+            local ability = getPlayerAbility(plr)
+            
+            -- ПЕРЕВІРКА НА SPECTATOR
+            if ability:lower() == "spectator" then
+                emergencyExit()
+                break
+            end
+            
+            -- Оновлення списку
+            local text = "C:\\> " .. plr.Name .. " --attr:\"" .. ability .. "\""
+            if not labels[plr.UserId] then
+                local lbl = Instance.new("TextLabel", scroll)
+                lbl.Size = UDim2.new(1, 0, 0, 18)
+                lbl.BackgroundTransparency = 1
+                lbl.Font = font
+                lbl.TextSize = 14
+                lbl.TextColor3 = colors.text
+                lbl.TextXAlignment = Enum.TextXAlignment.Left
+                labels[plr.UserId] = lbl
+            end
+            labels[plr.UserId].Text = text
+        end
+        
+        scroll.CanvasSize = UDim2.new(0, 0, 0, scroll.UIListLayout.AbsoluteContentSize.Y)
+    end
+end)
+
+-- ПЕРЕТЯГУВАННЯ
+local d, di, ds, sp
+topBar.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = true ds = i.Position sp = main.Position end end)
+UserInputService.InputChanged:Connect(function(i) 
+    if d and i.UserInputType == Enum.UserInputType.MouseMovement then 
+        local delta = i.Position - ds
+        main.Position = UDim2.new(sp.X.Scale, sp.X.Offset + delta.X, sp.Y.Scale, sp.Y.Offset + delta.Y)
+    end 
+end)
+UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = false end end)
